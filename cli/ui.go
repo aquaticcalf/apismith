@@ -30,7 +30,7 @@ func RunUI() error {
 	}
 	addr := rt.cfg.Listen
 	if addr == "" {
-		addr = ":8090"
+		addr = "127.0.0.1:8090"
 	}
 	fmt.Printf("apismith ui\n")
 	fmt.Printf("  spec        %s\n", rt.cfg.OpenAPISpec)

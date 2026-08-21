@@ -83,7 +83,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, ":8090"),
+		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, "127.0.0.1:8090"),
 		OpenAPISpec:        firstNonEmpty(os.Getenv("CONSOLE_OPENAPI_SPEC"), file.OpenAPISpec),
 		DefaultEnvironment: firstNonEmpty(os.Getenv("CONSOLE_DEFAULT_ENV"), file.DefaultEnvironment, "dev"),
 		Environments:       file.Environments,

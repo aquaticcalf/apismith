@@ -62,7 +62,8 @@ func (c *Config) Normalize() {
 	c.ClientID = strings.TrimSpace(c.ClientID)
 	c.ClientSecret = strings.TrimSpace(c.ClientSecret)
 	c.Username = strings.TrimSpace(c.Username)
-	c.Password = c.Password // passwords may have significant trailing spaces; do not trim
+	// Password is deliberately not trimmed: passwords may contain
+	// significant leading or trailing spaces.
 	c.Region = strings.TrimSpace(c.Region)
 	c.Endpoint = strings.TrimSpace(c.Endpoint)
 	c.AuthFlow = AuthFlow(strings.ToLower(strings.TrimSpace(string(c.AuthFlow))))

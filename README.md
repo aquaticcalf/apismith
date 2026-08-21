@@ -44,8 +44,8 @@ make build                    # bin/apismith
 make run                      # apismith ui → http://localhost:8090
 ```
 
-The console listens on **:8090** so it does not collide with the backend on
-`:8080`. Override with `CONSOLE_LISTEN`.
+The console listens on **127.0.0.1:8090** so it does not collide with the backend on
+`:8080`. Override with `CONSOLE_LISTEN` (e.g. `0.0.0.0:8090` on a trusted network).
 
 ### CLI
 
@@ -116,6 +116,8 @@ cmd/console/      alias for `apismith ui`
 - JWTs live in memory (browser + process). They are not logged.
 - `Authorization` is stored in history as `Bearer ********`.
 - Client secrets stay on the server; the UI only sees client IDs.
+- The console binds to `127.0.0.1` by default and has no auth of its own;
+  do not expose it on an untrusted network without adding protection.
 - Production requests require confirmation.
 
 ## Later phases (not in this MVP)

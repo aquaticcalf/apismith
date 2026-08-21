@@ -43,9 +43,10 @@ Authorization: Bearer <access token> and forwards to DEV or STAGING,
 which avoids CORS and keeps Cognito secrets off the frontend.
 
 Notes:
-  Default listen address is :8090 so it does not collide with the
-  backend on :8080. Override with CONSOLE_LISTEN or listen in
-  environments.yaml.
+  Default listen address is 127.0.0.1:8090 — loopback only, since the
+  console has no auth of its own. It does not collide with the backend
+  on :8080. Override with CONSOLE_LISTEN or listen in environments.yaml
+  (bind 0.0.0.0 only on a trusted network).
 
   The UI loads the same OpenAPI spec as ls and call. New endpoints
   appear automatically when the spec changes (restart ui to reload).
