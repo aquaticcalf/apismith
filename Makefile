@@ -1,10 +1,13 @@
-.PHONY: run jwt test tidy build
+.PHONY: run jwt ls test tidy build
 
 run:
-	go run ./cmd/console
+	go run ./cmd/apismith ui
 
 jwt:
-	go run ./cmd/jwt-cli $(ARGS)
+	go run ./cmd/apismith jwt $(ARGS)
+
+ls:
+	go run ./cmd/apismith ls
 
 test:
 	go test ./...
@@ -14,5 +17,4 @@ tidy:
 
 build:
 	mkdir -p bin
-	go build -o bin/api-console ./cmd/console
-	go build -o bin/jwt-cli ./cmd/jwt-cli
+	go build -o bin/apismith ./cmd/apismith

@@ -1,6 +1,7 @@
 # Binaries
 /bin/
 /dist/
+apismith
 api-console
 jwt-cli
 *.exe
