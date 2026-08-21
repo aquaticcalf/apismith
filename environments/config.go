@@ -11,6 +11,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DefaultListen is the console's fallback listen address. Loopback
+// only: the process has no auth of its own. Overridable via
+// CONSOLE_LISTEN or the listen field in environments.yaml.
+const DefaultListen = "127.0.0.1:8090"
+
 // File is the on-disk environments.yaml shape.
 type File struct {
 	Listen             string        `yaml:"listen"`
@@ -83,7 +88,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, "127.0.0.1:8090"),
+		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, DefaultListen),
 		OpenAPISpec:        firstNonEmpty(os.Getenv("CONSOLE_OPENAPI_SPEC"), file.OpenAPISpec),
 		DefaultEnvironment: firstNonEmpty(os.Getenv("CONSOLE_DEFAULT_ENV"), file.DefaultEnvironment, "dev"),
 		Environments:       file.Environments,
