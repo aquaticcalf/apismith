@@ -1,0 +1,95 @@
+openapi: 3.0.3
+info:
+  title: Console Fixture
+  version: "1"
+servers:
+  - url: http://localhost:8080/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: users
+    description: User APIs
+paths:
+  /users:
+    get:
+      tags: [users]
+      summary: List users
+      operationId: listUsers
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: ok
+    post:
+      tags: [users]
+      summary: Create user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/User"
+      responses:
+        "201":
+          description: created
+  /users/{id}:
+    get:
+      tags: [users]
+      summary: Get user
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: ok
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    User:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          example: Test User
+        email:
+          type: string
+          format: email
+          example: test@example.com
+        age:
+          type: integer
+          example: 30

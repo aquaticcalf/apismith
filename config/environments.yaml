@@ -1,0 +1,43 @@
+# API Test Console environments.
+# Secrets belong in config/credentials.yaml or environment variables, not here.
+
+listen: ":8090"
+openapi_spec: "../framework-backend/nimbus_openapi_spec.yaml"
+default_environment: dev
+
+environments:
+  - id: dev
+    name: DEV
+    base_url: http://localhost:8080/api/v1
+    production: false
+    cognito:
+      region: ap-south-1
+      user_pool_id: ""
+      client_id: ""
+      # Leave endpoint empty for real AWS Cognito.
+      # For the local emulator: http://localhost:9229
+      endpoint: ""
+      auth_flow: srp
+
+  - id: staging
+    name: STAGING
+    base_url: https://staging-api.example.com/api/v1
+    production: false
+    cognito:
+      region: ap-south-1
+      user_pool_id: ""
+      client_id: ""
+      endpoint: ""
+      auth_flow: srp
+
+  # Production is defined but requests require an explicit confirmation.
+  # Uncomment and fill in when you are ready.
+  # - id: production
+  #   name: PRODUCTION
+  #   base_url: https://api.example.com/api/v1
+  #   production: true
+  #   cognito:
+  #     region: ap-south-1
+  #     user_pool_id: ""
+  #     client_id: ""
+  #     auth_flow: srp

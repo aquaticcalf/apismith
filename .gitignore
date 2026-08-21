@@ -1,0 +1,23 @@
+# Binaries
+/bin/
+/dist/
+api-console
+jwt-cli
+*.exe
+
+# Credentials — never commit secrets or JWTs
+config/credentials.yaml
+config/credentials.json
+*.pem
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Go
+vendor/

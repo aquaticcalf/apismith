@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API Test Console</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">⌘</span>
+      <div>
+        <strong>API Test Console</strong>
+        <div class="brand-sub" id="spec-title">loading OpenAPI…</div>
+      </div>
+    </div>
+    <div class="topbar-controls">
+      <label class="field compact">
+        <span>Environment</span>
+        <select id="environment"></select>
+      </label>
+      <span id="prod-badge" class="badge danger hidden">PRODUCTION</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <input id="api-search" class="search" type="search" placeholder="Search APIs…" autocomplete="off" />
+      <nav id="endpoint-list" class="endpoint-list"></nav>
+    </aside>
+
+    <section class="workspace">
+      <section class="panel auth-panel">
+        <div class="panel-head">
+          <h2>Authentication</h2>
+          <span id="auth-status" class="status muted">Not authenticated</span>
+        </div>
+        <div class="auth-modes">
+          <label><input type="radio" name="auth-mode" value="jwt" checked /> Global JWT</label>
+          <label><input type="radio" name="auth-mode" value="none" /> No Authentication</label>
+          <label><input type="radio" name="auth-mode" value="custom" /> Custom Authorization Header</label>
+        </div>
+        <div id="jwt-fields" class="grid-2">
+          <label class="field">
+            <span>Client ID</span>
+            <input id="client-id" spellcheck="false" placeholder="Cognito app client id" />
+          </label>
+          <label class="field">
+            <span>Username</span>
+            <input id="username" spellcheck="false" placeholder="optional if stored on server" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="password" type="password" placeholder="optional if stored on server" />
+          </label>
+          <label class="field jwt-field">
+            <span>JWT (access token)</span>
+            <div class="inline">
+              <input id="jwt" spellcheck="false" placeholder="Generate or paste a Bearer token" />
+              <button type="button" id="btn-generate" class="primary">Generate JWT</button>
+              <button type="button" id="btn-copy-jwt" class="ghost">Copy</button>
+            </div>
+          </label>
+        </div>
+        <label id="custom-auth-wrap" class="field hidden">
+          <span>Authorization header</span>
+          <input id="custom-auth" spellcheck="false" placeholder="Bearer …" />
+        </label>
+      </section>
+
+      <section class="panel request-panel">
+        <div class="panel-head">
+          <h2 id="op-title">Select an API</h2>
+          <span id="op-auth" class="chip hidden"></span>
+        </div>
+        <p id="op-desc" class="muted op-desc"></p>
+        <div class="op-line">
+          <span id="op-method" class="method">—</span>
+          <code id="op-path">/</code>
+        </div>
+
+        <div id="params-wrap" class="hidden">
+          <h3>Parameters</h3>
+          <div id="params" class="params"></div>
+        </div>
+
+        <div id="body-wrap" class="hidden">
+          <div class="panel-head tight">
+            <h3>Request Body</h3>
+            <div class="toggle">
+              <button type="button" data-body-mode="form" class="active">Form</button>
+              <button type="button" data-body-mode="json">JSON</button>
+            </div>
+          </div>
+          <div id="body-form" class="params"></div>
+          <div id="body-json-wrap" class="hidden">
+            <div class="editor-toolbar">
+              <button type="button" id="btn-format-json" class="ghost">Format</button>
+              <span id="json-error" class="error-text"></span>
+            </div>
+            <textarea id="body-json" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="btn-send" class="primary send" disabled>Send Request</button>
+          <button type="button" id="btn-copy-request" class="ghost" disabled>Copy Request</button>
+        </div>
+      </section>
+
+      <section class="panel response-panel">
+        <div class="panel-head">
+          <h2>Response</h2>
+          <div id="response-meta" class="response-meta muted">No request sent yet</div>
+        </div>
+        <div class="tabs">
+          <button type="button" data-tab="body" class="active">Body</button>
+          <button type="button" data-tab="headers">Headers</button>
+          <button type="button" data-tab="raw">Raw</button>
+        </div>
+        <pre id="response-view" class="response-view">Awaiting a request.</pre>
+        <div class="actions">
+          <button type="button" id="btn-copy-response" class="ghost" disabled>Copy Response</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="history">
+    <div class="panel-head tight">
+      <h2>Recent Requests</h2>
+      <button type="button" id="btn-clear-history" class="ghost">Clear</button>
+    </div>
+    <div id="history-list" class="history-list muted">No requests yet.</div>
+  </footer>
+
+  <dialog id="prod-dialog">
+    <form method="dialog" class="dialog">
+      <h3>Production request</h3>
+      <p>You are about to send a request to <strong>PRODUCTION</strong>.</p>
+      <p id="prod-dialog-detail" class="muted"></p>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button value="confirm" class="danger">Continue</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
