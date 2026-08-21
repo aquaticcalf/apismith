@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"aegion-dynamic/api-console/auth/cognito"
@@ -176,13 +177,13 @@ func (c *Config) applyEnvOverlays() {
 }
 
 func (c *Config) resolveOpenAPISpec(configDir string) error {
-	candidates := []string{
+	candidates := dedupePaths([]string{
 		c.OpenAPISpec,
 		filepath.Join(configDir, "..", "openapi", "openapi.yaml"),
 		"openapi/openapi.yaml",
 		"../framework-backend/nimbus_openapi_spec.yaml",
 		"../framework-backend/docs/content/docs/openapi.yaml",
-	}
+	})
 	for _, p := range candidates {
 		if p == "" {
 			continue
@@ -288,6 +289,21 @@ func (c *Config) credsFor(envID string) Credentials {
 		return merged
 	}
 	return c.Credentials[""]
+}
+
+// dedupePaths drops empty entries and repeats, preserving first-seen
+// order. The candidate list mixes literal and filepath.Join forms that
+// can resolve to the same path; the not-found error lists what was
+// searched and should not show the same entry twice.
+func dedupePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p == "" || slices.Contains(out, p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {
