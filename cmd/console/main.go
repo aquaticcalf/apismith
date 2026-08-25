@@ -1,15 +1,18 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"aegion-dynamic/api-console/cli"
 )
 
+// console is an alias for `apismith ui`. With no arguments it starts the
+// explorer; any other arguments are forwarded to the apismith CLI.
 func main() {
-	if err := cli.RunUI(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if len(os.Args) < 2 {
+		os.Args = append(os.Args, "ui")
+	}
+	if err := cli.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

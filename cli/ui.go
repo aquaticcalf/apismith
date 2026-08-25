@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"aegion-dynamic/api-console/environments"
 	"aegion-dynamic/api-console/server"
 
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ func RunUI() error {
 	}
 	addr := rt.cfg.Listen
 	if addr == "" {
-		addr = ":8090"
+		addr = environments.DefaultListen
 	}
 	fmt.Printf("apismith ui\n")
 	fmt.Printf("  spec        %s\n", rt.cfg.OpenAPISpec)

@@ -1,9 +1,9 @@
 # Binaries
 /bin/
 /dist/
-apismith
-api-console
-jwt-cli
+/apismith
+/api-console
+/jwt-cli
 *.exe
 
 # Credentials — never commit secrets or JWTs

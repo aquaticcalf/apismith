@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"aegion-dynamic/api-console/auth/cognito"
 
 	"gopkg.in/yaml.v3"
 )
+
+// DefaultListen is the console's fallback listen address. Loopback
+// only: the process has no auth of its own. Overridable via
+// CONSOLE_LISTEN or the listen field in environments.yaml.
+const DefaultListen = "127.0.0.1:8090"
 
 // File is the on-disk environments.yaml shape.
 type File struct {
@@ -83,7 +89,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, ":8090"),
+		Listen:             firstNonEmpty(os.Getenv("CONSOLE_LISTEN"), file.Listen, DefaultListen),
 		OpenAPISpec:        firstNonEmpty(os.Getenv("CONSOLE_OPENAPI_SPEC"), file.OpenAPISpec),
 		DefaultEnvironment: firstNonEmpty(os.Getenv("CONSOLE_DEFAULT_ENV"), file.DefaultEnvironment, "dev"),
 		Environments:       file.Environments,
@@ -171,13 +177,13 @@ func (c *Config) applyEnvOverlays() {
 }
 
 func (c *Config) resolveOpenAPISpec(configDir string) error {
-	candidates := []string{
+	candidates := dedupePaths([]string{
 		c.OpenAPISpec,
 		filepath.Join(configDir, "..", "openapi", "openapi.yaml"),
 		"openapi/openapi.yaml",
 		"../framework-backend/nimbus_openapi_spec.yaml",
 		"../framework-backend/docs/content/docs/openapi.yaml",
-	}
+	})
 	for _, p := range candidates {
 		if p == "" {
 			continue
@@ -283,6 +289,21 @@ func (c *Config) credsFor(envID string) Credentials {
 		return merged
 	}
 	return c.Credentials[""]
+}
+
+// dedupePaths drops empty entries and repeats, preserving first-seen
+// order. The candidate list mixes literal and filepath.Join forms that
+// can resolve to the same path; the not-found error lists what was
+// searched and should not show the same entry twice.
+func dedupePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p == "" || slices.Contains(out, p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {
