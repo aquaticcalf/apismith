@@ -11,13 +11,13 @@ import (
 	"aegion-dynamic/apismith/request"
 )
 
-func writeTempConfig(t *testing.T, baseURL string) string {
+func writeTempSpec(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "openapi.yaml")
 	specBody := `openapi: 3.0.3
 info: {title: t, version: '1'}
-servers: [{url: ` + baseURL + `}]
+servers: [{url: http://localhost:8080}]
 security: [{bearerAuth: []}]
 paths:
   /users:
@@ -45,16 +45,20 @@ components:
 	if err := os.WriteFile(spec, []byte(specBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := filepath.Join(dir, "environments.yaml")
-	cfgBody := "openapi_spec: " + spec + "\ndefault_environment: dev\nenvironments:\n  - id: dev\n    name: DEV\n    base_url: " + baseURL + "\n    production: false\n    cognito: {region: ap-south-1}\n"
-	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return cfgPath
+	return spec
+}
+
+func newTestClient(t *testing.T, srvURL, specPath string) *Client {
+	t.Helper()
+	t.Setenv("APITEST_BASE_URL", srvURL)
+	t.Setenv("APITEST_OPENAPI_SPEC", specPath)
+	// ensure no leftover APITEST_CONFIG forces yaml path
+	t.Setenv("APITEST_CONFIG", "")
+	t.Setenv("CONSOLE_CONFIG", "")
+	return New(t, WithJWT("fake-jwt"), WithBaseURL(srvURL))
 }
 
 func TestClientE2E(t *testing.T) {
-	// fake backend
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/users":
@@ -79,10 +83,8 @@ func TestClientE2E(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfgPath := writeTempConfig(t, srv.URL)
-
-	// bypass real Cognito with a fake JWT - SDK should attach it for auth'd routes
-	client := New(t, WithConfigPath(cfgPath), WithJWT("fake-jwt"), WithBaseURL(srv.URL))
+	spec := writeTempSpec(t)
+	client := newTestClient(t, srv.URL, spec)
 
 	t.Run("create", func(t *testing.T) {
 		var id string
@@ -93,7 +95,6 @@ func TestClientE2E(t *testing.T) {
 		if id != "u-123" {
 			t.Fatalf("capture got %q want u-123", id)
 		}
-		// stash via closure for next subtest
 		t.Logf("captured id=%s", id)
 	})
 
@@ -104,14 +105,12 @@ func TestClientE2E(t *testing.T) {
 	})
 
 	t.Run("public_no_auth", func(t *testing.T) {
-		// /auth/login is public per spec (security: []), SDK auto skips JWT
 		client.POST(t, "/auth/login", WithBody(map[string]any{"email": "x"}), WithRequestNoAuth()).
 			ExpectStatusCode(200).
 			ExpectBodyContains("token")
 	})
 
 	t.Run("concrete_path_extract", func(t *testing.T) {
-		// concrete path like /users/u-123 auto-extracts {id}
 		client.GET(t, "/users/u-123").ExpectStatusCode(200)
 	})
 
@@ -136,10 +135,29 @@ func TestClientTypesafetyBodyStruct(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"1"}`))
 	}))
 	defer srv.Close()
-	cfgPath := writeTempConfig(t, srv.URL)
-	client := New(t, WithConfigPath(cfgPath), WithJWT("tok"), WithBaseURL(srv.URL))
+	spec := writeTempSpec(t)
+	client := newTestClient(t, srv.URL, spec)
+	// override jwt for this test
+	client = New(t, WithJWT("tok"), WithBaseURL(srv.URL))
+	t.Setenv("APITEST_OPENAPI_SPEC", spec)
 	client.POST(t, "/users", WithBody(CreateReq{Email: "typed@example.com", Name: "Ada"})).
 		ExpectStatusCode(201)
+}
+
+func TestClientNoSpecPassthrough(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	t.Setenv("APITEST_BASE_URL", srv.URL)
+	t.Setenv("APITEST_OPENAPI_SPEC", "")
+	t.Setenv("APITEST_CONFIG", "")
+	// ensure no default spec file interferes
+	client := New(t, WithJWT("tok"), WithBaseURL(srv.URL))
+	// should passthrough without validation even though spec missing
+	client.GET(t, "/any/path").ExpectStatusCode(200)
+	client.POST(t, "/users", WithBody(map[string]any{"x": 1})).ExpectStatusCode(200)
 }
 
 func TestResponseJSONPath(t *testing.T) {
@@ -148,18 +166,15 @@ func TestResponseJSONPath(t *testing.T) {
 		_, _ = w.Write([]byte(`{"user":{"emails":["a@b.com","b@b.com"]},"count":2}`))
 	}))
 	defer srv.Close()
-	cfgPath := writeTempConfig(t, srv.URL)
-	client := New(t, WithConfigPath(cfgPath), WithJWT("tok"), WithBaseURL(srv.URL))
+	spec := writeTempSpec(t)
+	client := newTestClient(t, srv.URL, spec)
 	resp := client.GET(t, "/users/u-123", WithPath("id", "u-123"))
-	// hijack body for this unit test - directly test getPath
-	resp.Raw() // ensure not unused
+	resp.Raw()
 	if got := resp.JSON("$.user.emails[0]"); got != "a@b.com" {
 		t.Fatalf("got %v", got)
 	}
 	if got := resp.JSON("count"); got.(float64) != 2 {
 		t.Fatalf("got %v", got)
 	}
-	// use executor directly for this assertion
-	exec := request.NewExecutor()
-	_ = exec
+	_ = request.NewExecutor()
 }

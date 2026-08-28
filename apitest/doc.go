@@ -1,29 +1,18 @@
-// Package apitest provides a Go SDK for e2e API testing that builds directly
-// on top of `testing.T` / `go test` instead of reimplementing a runner.
+// Package apitest provides e2e API testing on top of `testing.T` with zero yaml dependency.
+// Single env from env vars only (no .dev/.staging, no environments.yaml).
 //
-// It reuses apismith's existing layers:
-//
-//	env loading    -> environments.Load (config/environments.yaml + env vars)
-//	OpenAPI truth  -> openapi.Load / Catalog.Lookup (same as `apismith call`)
-//	JWT minting    -> auth/cognito.Generate (SRP/password, cached per Client)
-//	HTTP execution -> request.Executor (URL building, header masking, timing)
+// Env vars (single target):
+//   APITEST_BASE_URL  e.g. http://localhost:8080/api/v1  (also API_BASE_URL, CONSOLE_BASE_URL)
+//   COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_USERNAME, COGNITO_PASSWORD
+//   Optional: COGNITO_CLIENT_SECRET, COGNITO_REGION/AWS_REGION, COGNITO_ENDPOINT, APITEST_JWT (bypass)
+//   Optional: APITEST_OPENAPI_SPEC - if set, validates METHOD PATH; if unset, no validation (passthrough).
 //
 // Usage:
 //
 //	func TestUserLifecycle(t *testing.T) {
-//	    api := apitest.New(t) // APITEST_ENV=staging go test ./e2e -run TestUser -v
+//	    api := apitest.New(t) // reads env vars, mints JWT lazily
 //	    var id string
-//	    api.POST(t, "/users", apitest.WithBody(map[string]any{"email": "a@b.com"})).
-//	        ExpectStatus("201").Capture("$.id", &id)
-//	    api.GET(t, "/users/{id}", apitest.WithPath("id", id)).
-//	        ExpectStatusCode(200).ExpectJSON("$.email", "a@b.com")
+//	    api.POST(t, "/users", apitest.WithBody(map[string]any{"email":"a@b.com"})).ExpectStatus("201").Capture("$.id",&id)
+//	    api.GET(t, "/users/{id}", apitest.WithPath("id", id)).ExpectStatusCode(200)
 //	}
-//
-// Typed bodies give compiler safety when you share backend's oapi-codegen structs:
-//
-//	import backend "framework-backend/api"
-//	api.POST(t, "/users", apitest.WithBody(backend.CreateUserRequest{Email: "a@b.com"}))
-//
-// Go handles orchestration: t.Run, t.Parallel, table-driven tests, -run regex,
-// -count, -json output for CI. JWT is minted lazily and reused.
 package apitest
