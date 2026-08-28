@@ -8,29 +8,28 @@ import (
 	"testing"
 
 	"aegion-dynamic/apismith/auth/cognito"
-	"aegion-dynamic/apismith/environments"
 	"aegion-dynamic/apismith/openapi"
 	"aegion-dynamic/apismith/request"
 )
 
-// Client is the e2e test client. Zero yaml dependency - single env from env vars.
-// Base URL and Cognito creds come from env vars, JWT minted lazily once.
+// Client is the e2e test client. Fully code-configured - no env var or yaml
+// reading inside the SDK. Caller loads env vars/secrets in their app and passes
+// via options. Single target, single base URL.
 //
-// Required env vars (single env):
-//   APITEST_BASE_URL  e.g. http://localhost:8080/api/v1  (fallback: CONSOLE_BASE_URL, API_BASE_URL)
-//   COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_USERNAME, COGNITO_PASSWORD
-//   Optional: COGNITO_CLIENT_SECRET, COGNITO_REGION (default ap-south-1), COGNITO_ENDPOINT, APITEST_JWT (bypass)
-//   Optional: APITEST_OPENAPI_SPEC - if set, validates METHOD PATH against spec; if unset, no validation.
+// Example:
 //
-// Usage: api := apitest.New(t)
-//        api.POST(t, "/users", apitest.WithBody(...)).ExpectStatus("201")
+//	api := apitest.New(t,
+//	    apitest.WithBaseURL(os.Getenv("API_BASE_URL")),
+//	    apitest.WithCognito(cognito.Config{UserPoolID: ..., ClientID: ..., Username: ..., Password: ...}),
+//	    apitest.WithOpenAPISpec("../openapi/openapi.yaml"), // optional, validates METHOD PATH
+//	)
+//	api.POST(t, "/users", apitest.WithBody(...)).ExpectStatus("201")
 type Client struct {
 	tb      testing.TB
-	cfg     *environments.Config // nil when env-only
-	catalog *openapi.Catalog     // nil when no spec
+	catalog *openapi.Catalog // nil when no spec
 	exec    *request.Executor
-	env     *environments.Environment // single env, id="apitest"
-	envID   string
+	baseURL string
+	cogCfg  *cognito.Config
 	jwt     string
 	jwtErr  error
 	didAuth bool
@@ -40,16 +39,35 @@ type Client struct {
 type Option func(*clientConfig)
 
 type clientConfig struct {
-	baseURL  string // override for tests (httptest)
-	jwt      string // bypass Cognito for tests
-	executor *request.Executor
-	noAuth   bool
+	baseURL       string
+	openAPISpec   string
+	cognitoConfig *cognito.Config
+	jwt           string
+	executor      *request.Executor
+	noAuth        bool
 }
 
-// WithBaseURL overrides base URL (useful with httptest.NewServer).
+// WithBaseURL sets the API base URL (required).
 func WithBaseURL(url string) Option { return func(c *clientConfig) { c.baseURL = url } }
 
-// WithJWT bypasses Cognito and uses this token.
+// WithOpenAPISpec sets the OpenAPI spec path for METHOD PATH validation.
+// If unset, validation is skipped (passthrough).
+func WithOpenAPISpec(path string) Option { return func(c *clientConfig) { c.openAPISpec = path } }
+
+// WithCognito sets the Cognito config used to mint JWTs lazily.
+// Pass the same struct you use for auth (UserPoolID, ClientID, Username, Password, etc.).
+func WithCognito(cfg cognito.Config) Option {
+	return func(c *clientConfig) {
+		cp := cfg
+		cp.Normalize()
+		c.cognitoConfig = &cp
+	}
+}
+
+// WithCognitoConfig is an alias for WithCognito.
+func WithCognitoConfig(cfg cognito.Config) Option { return WithCognito(cfg) }
+
+// WithJWT bypasses Cognito and uses this token (useful for tests/fake JWT).
 func WithJWT(tok string) Option {
 	return func(c *clientConfig) {
 		c.jwt = tok
@@ -63,19 +81,25 @@ func WithClientNoAuth() Option { return func(c *clientConfig) { c.noAuth = true 
 // WithExecutor injects a custom http client (e.g. for mocking).
 func WithExecutor(e *request.Executor) Option { return func(c *clientConfig) { c.executor = e } }
 
-// New creates a Client bound to the caller's testing.TB. No yaml required.
-// Env vars are the single source of truth; APITEST_BASE_URL selects target.
+// New creates a Client. All configuration is via code - no env vars read here.
+// Caller is responsible for loading any env vars and passing them in.
 func New(tb testing.TB, opts ...Option) *Client {
 	tb.Helper()
 	cc := &clientConfig{}
 	for _, o := range opts {
 		o(cc)
 	}
-	cfg, catalog, env := loadEnv(tb)
-	if cc.baseURL != "" && env != nil {
-		cp := *env
-		cp.BaseURL = cc.baseURL
-		env = &cp
+	baseURL := strings.TrimSpace(cc.baseURL)
+	if baseURL == "" {
+		tb.Fatalf("apitest: WithBaseURL is required (e.g. apitest.WithBaseURL(os.Getenv(\"API_BASE_URL\")))")
+	}
+	var catalog *openapi.Catalog
+	if strings.TrimSpace(cc.openAPISpec) != "" {
+		cat, err := openapi.Load(cc.openAPISpec)
+		if err != nil {
+			tb.Fatalf("apitest: load OpenAPI %s: %v", cc.openAPISpec, err)
+		}
+		catalog = cat
 	}
 	exec := cc.executor
 	if exec == nil {
@@ -83,11 +107,10 @@ func New(tb testing.TB, opts ...Option) *Client {
 	}
 	c := &Client{
 		tb:      tb,
-		cfg:     cfg,
 		catalog: catalog,
 		exec:    exec,
-		env:     env,
-		envID:   env.ID,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		cogCfg:  cc.cognitoConfig,
 	}
 	if cc.noAuth {
 		c.didAuth = true
@@ -99,147 +122,23 @@ func New(tb testing.TB, opts ...Option) *Client {
 	return c
 }
 
-func loadEnv(tb testing.TB) (*environments.Config, *openapi.Catalog, *environments.Environment) {
-	tb.Helper()
-	// Prefer explicit yaml only if caller set it - otherwise env-only (no .dev/.staging)
-	if p := strings.TrimSpace(os.Getenv("APITEST_CONFIG")); p != "" {
-		if cfg, cat, env := tryLoadYAML(tb, p); cfg != nil {
-			return cfg, cat, env
-		}
-	}
-	if p := strings.TrimSpace(os.Getenv("CONSOLE_CONFIG")); p != "" {
-		if cfg, cat, env := tryLoadYAML(tb, p); cfg != nil {
-			return cfg, cat, env
-		}
-	}
-	// Env-only single env
-	baseURL := firstNonEmpty(
-		os.Getenv("APITEST_BASE_URL"),
-		os.Getenv("API_BASE_URL"),
-		os.Getenv("CONSOLE_BASE_URL"),
-		os.Getenv("BASE_URL"),
-	)
-	if baseURL == "" {
-		// fallback for local dev without env set - keep tests runnable with httptest override
-		baseURL = "http://localhost:8080/api/v1"
-		tb.Logf("apitest: APITEST_BASE_URL not set, defaulting to %s (set APITEST_BASE_URL to override)", baseURL)
-	}
-	env := &environments.Environment{
-		ID:      "apitest",
-		Name:    "apitest",
-		BaseURL: baseURL,
-		Cognito: environments.CognitoConfig{
-			Region:     firstNonEmpty(os.Getenv("COGNITO_REGION"), os.Getenv("AWS_REGION"), "ap-south-1"),
-			UserPoolID: os.Getenv("COGNITO_USER_POOL_ID"),
-			ClientID:   os.Getenv("COGNITO_CLIENT_ID"),
-			Endpoint:   os.Getenv("COGNITO_ENDPOINT"),
-			AuthFlow:   firstNonEmpty(os.Getenv("COGNITO_AUTH_FLOW"), os.Getenv("CONSOLE_AUTH_FLOW"), "srp"),
-		},
-	}
-	creds := environments.Credentials{
-		Username:     firstNonEmpty(os.Getenv("COGNITO_USERNAME"), os.Getenv("CONSOLE_USERNAME")),
-		Password:     firstNonEmpty(os.Getenv("COGNITO_PASSWORD"), os.Getenv("CONSOLE_PASSWORD")),
-		ClientSecret: os.Getenv("COGNITO_CLIENT_SECRET"),
-	}
-	cfg := &environments.Config{
-		DefaultEnvironment: "apitest",
-		Environments:       []environments.Environment{*env},
-		Credentials:        map[string]environments.Credentials{"": creds, "apitest": creds},
-		OpenAPISpec:        strings.TrimSpace(os.Getenv("APITEST_OPENAPI_SPEC")),
-	}
-	// Also respect CONSOLE_OPENAPI_SPEC
-	if cfg.OpenAPISpec == "" {
-		cfg.OpenAPISpec = strings.TrimSpace(os.Getenv("CONSOLE_OPENAPI_SPEC"))
-	}
-	// Try to load catalog if spec path provided or default file exists
-	var catalog *openapi.Catalog
-	specCandidates := []string{
-		cfg.OpenAPISpec,
-		"openapi/openapi.yaml",
-		"../openapi/openapi.yaml",
-		"../framework-backend/nimbus_openapi_spec.yaml",
-	}
-	for _, p := range specCandidates {
-		if p == "" {
-			continue
-		}
-		if _, err := os.Stat(p); err == nil {
-			if cat, err := openapi.Load(p); err == nil {
-				catalog = cat
-				break
-			}
-		}
-	}
-	// catalog remains nil if no spec found -> no validation, direct passthrough
-	return cfg, catalog, env
-}
-
-func tryLoadYAML(tb testing.TB, path string) (*environments.Config, *openapi.Catalog, *environments.Environment) {
-	tb.Helper()
-	if _, err := os.Stat(path); err != nil {
-		tb.Logf("apitest: config %s not found, using env vars", path)
-		return nil, nil, nil
-	}
-	cfg, err := environments.Load(path)
-	if err != nil {
-		tb.Logf("apitest: load %s failed: %v, using env vars", path, err)
-		return nil, nil, nil
-	}
-	envID := cfg.DefaultEnvironment
-	env := cfg.Find(envID)
-	if env == nil && len(cfg.Environments) > 0 {
-		env = &cfg.Environments[0]
-		envID = env.ID
-	}
-	var catalog *openapi.Catalog
-	if cfg.OpenAPISpec != "" {
-		catalog, _ = openapi.Load(cfg.OpenAPISpec)
-	}
-	return cfg, catalog, env
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
-// EnvID returns the single env id ("apitest").
-func (c *Client) EnvID() string { return c.envID }
-
 // BaseURL returns the target base URL.
-func (c *Client) BaseURL() string {
-	if c.env != nil {
-		return c.env.BaseURL
-	}
-	return ""
-}
+func (c *Client) BaseURL() string { return c.baseURL }
 
-// ensureJWT fetches Cognito token if needed.
+// ensureJWT mints a JWT lazily from WithCognito config, or returns the WithJWT token.
 func (c *Client) ensureJWT() string {
 	if c.didAuth {
 		return c.jwt
 	}
 	c.didAuth = true
-	if tok := strings.TrimSpace(os.Getenv("APITEST_JWT")); tok != "" {
-		c.jwt = tok
-		return c.jwt
-	}
-	if c.cfg == nil || c.env == nil {
+	if c.cogCfg == nil {
 		return ""
 	}
-	cc, err := c.cfg.CognitoConfigFor(c.envID, "", "", "")
-	if err != nil {
-		c.jwtErr = err
+	if err := c.cogCfg.Validate(); err != nil {
+		// no creds is okay for public endpoints - just leave jwt empty
 		return ""
 	}
-	if cc.UserPoolID == "" || cc.ClientID == "" || cc.Username == "" || cc.Password == "" {
-		return ""
-	}
-	tokens, err := cognito.Generate(context.Background(), cc)
+	tokens, err := cognito.Generate(context.Background(), *c.cogCfg)
 	if err != nil {
 		c.jwtErr = err
 		return ""
@@ -248,7 +147,7 @@ func (c *Client) ensureJWT() string {
 	return c.jwt
 }
 
-// Do executes a request. If OpenAPI spec loaded, validates METHOD PATH; otherwise passes through.
+// Do executes a request. If OpenAPI spec was provided via WithOpenAPISpec, validates METHOD PATH.
 func (c *Client) Do(tb testing.TB, method, path string, opts ...CallOption) *Response {
 	tb.Helper()
 	co := &callConfig{
@@ -274,7 +173,7 @@ func (c *Client) Do(tb testing.TB, method, path string, opts ...CallOption) *Res
 				}
 			}
 			if err != nil {
-				tb.Fatalf("apitest: %v (env=%s)", err, c.envID)
+				tb.Fatalf("apitest: %v", err)
 			}
 		}
 		for k, v := range extracted {
@@ -283,10 +182,8 @@ func (c *Client) Do(tb testing.TB, method, path string, opts ...CallOption) *Res
 			}
 		}
 	} else {
-		// no catalog - use method/path as-is
 		ep = &openapi.Endpoint{Method: strings.ToUpper(method), Path: path, AuthRequired: true}
 		extracted = map[string]string{}
-		// if path contains concrete segments like /users/123, try to leave as-is; executor will use exact path
 	}
 	bodyStr := ""
 	if co.Body != nil {
@@ -329,7 +226,7 @@ func (c *Client) Do(tb testing.TB, method, path string, opts ...CallOption) *Res
 		}
 	}
 	in := request.ExecuteInput{
-		Environment: c.envID,
+		Environment: "apitest",
 		Method:      ep.Method,
 		Path:        ep.Path,
 		PathParams:  co.Path,
@@ -339,7 +236,7 @@ func (c *Client) Do(tb testing.TB, method, path string, opts ...CallOption) *Res
 		AuthMode:    authMode,
 		JWT:         jwt,
 	}
-	out := c.exec.Execute(in, c.env.BaseURL, c.env.Production)
+	out := c.exec.Execute(in, c.baseURL, false)
 	resp := &Response{tb: tb, in: in, ep: ep, out: out, client: c}
 	if strings.Contains(strings.ToLower(out.ContentType), "json") {
 		resp.prettyBody = request.PrettyJSON(out.Body)
@@ -371,11 +268,11 @@ func (c *Client) DELETE(tb testing.TB, path string, opts ...CallOption) *Respons
 	return c.Do(tb, "DELETE", path, opts...)
 }
 
-// CallByID uses operationId (requires catalog; fails if no spec).
+// CallByID uses operationId (requires WithOpenAPISpec).
 func (c *Client) CallByID(tb testing.TB, operationID string, opts ...CallOption) *Response {
 	tb.Helper()
 	if c.catalog == nil {
-		tb.Fatalf("apitest: CallByID requires APITEST_OPENAPI_SPEC to be set")
+		tb.Fatalf("apitest: CallByID requires WithOpenAPISpec")
 	}
 	ep, _, err := c.catalog.Lookup(operationID)
 	if err != nil {

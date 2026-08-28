@@ -1,24 +1,30 @@
-// Copy to e2e/users_test.go and run with env vars (no yaml):
-//   APITEST_BASE_URL=http://localhost:8080/api/v1 \
-//   COGNITO_USER_POOL_ID=ap-south-1_xxx COGNITO_CLIENT_ID=xxx \
-//   COGNITO_USERNAME=user@example.com COGNITO_PASSWORD=secret \
-//   go test ./e2e -v
+// Copy to e2e/users_test.go
 package e2e_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"aegion-dynamic/apismith/apitest"
+	"aegion-dynamic/apismith/auth/cognito"
 )
 
 func TestUserLifecycle(t *testing.T) {
-	api := apitest.New(t) // single env from APITEST_BASE_URL, JWT lazily minted
+	api := apitest.New(t,
+		apitest.WithBaseURL(os.Getenv("API_BASE_URL")),
+		apitest.WithCognito(cognito.Config{
+			UserPoolID: os.Getenv("COGNITO_USER_POOL_ID"),
+			ClientID:   os.Getenv("COGNITO_CLIENT_ID"),
+			Username:   os.Getenv("COGNITO_USERNAME"),
+			Password:   os.Getenv("COGNITO_PASSWORD"),
+		}),
+		apitest.WithOpenAPISpec("openapi/openapi.yaml"), // optional, code-only
+	)
 
 	email := fmt.Sprintf("e2e+%d@example.com", time.Now().UnixNano())
 	var id string
-
 	t.Run("create", func(t *testing.T) {
 		api.POST(t, "/users", apitest.WithBody(map[string]any{"email": email, "name": "e2e"})).
 			ExpectStatus("201").Capture("$.id", &id)

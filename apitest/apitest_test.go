@@ -50,12 +50,7 @@ components:
 
 func newTestClient(t *testing.T, srvURL, specPath string) *Client {
 	t.Helper()
-	t.Setenv("APITEST_BASE_URL", srvURL)
-	t.Setenv("APITEST_OPENAPI_SPEC", specPath)
-	// ensure no leftover APITEST_CONFIG forces yaml path
-	t.Setenv("APITEST_CONFIG", "")
-	t.Setenv("CONSOLE_CONFIG", "")
-	return New(t, WithJWT("fake-jwt"), WithBaseURL(srvURL))
+	return New(t, WithBaseURL(srvURL), WithOpenAPISpec(specPath), WithJWT("fake-jwt"))
 }
 
 func TestClientE2E(t *testing.T) {
@@ -95,7 +90,6 @@ func TestClientE2E(t *testing.T) {
 		if id != "u-123" {
 			t.Fatalf("capture got %q want u-123", id)
 		}
-		t.Logf("captured id=%s", id)
 	})
 
 	t.Run("get", func(t *testing.T) {
@@ -136,10 +130,7 @@ func TestClientTypesafetyBodyStruct(t *testing.T) {
 	}))
 	defer srv.Close()
 	spec := writeTempSpec(t)
-	client := newTestClient(t, srv.URL, spec)
-	// override jwt for this test
-	client = New(t, WithJWT("tok"), WithBaseURL(srv.URL))
-	t.Setenv("APITEST_OPENAPI_SPEC", spec)
+	client := New(t, WithBaseURL(srv.URL), WithOpenAPISpec(spec), WithJWT("tok"))
 	client.POST(t, "/users", WithBody(CreateReq{Email: "typed@example.com", Name: "Ada"})).
 		ExpectStatusCode(201)
 }
@@ -150,12 +141,8 @@ func TestClientNoSpecPassthrough(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()
-	t.Setenv("APITEST_BASE_URL", srv.URL)
-	t.Setenv("APITEST_OPENAPI_SPEC", "")
-	t.Setenv("APITEST_CONFIG", "")
-	// ensure no default spec file interferes
-	client := New(t, WithJWT("tok"), WithBaseURL(srv.URL))
-	// should passthrough without validation even though spec missing
+	// no WithOpenAPISpec -> passthrough without validation
+	client := New(t, WithBaseURL(srv.URL), WithJWT("tok"))
 	client.GET(t, "/any/path").ExpectStatusCode(200)
 	client.POST(t, "/users", WithBody(map[string]any{"x": 1})).ExpectStatusCode(200)
 }
@@ -169,7 +156,6 @@ func TestResponseJSONPath(t *testing.T) {
 	spec := writeTempSpec(t)
 	client := newTestClient(t, srv.URL, spec)
 	resp := client.GET(t, "/users/u-123", WithPath("id", "u-123"))
-	resp.Raw()
 	if got := resp.JSON("$.user.emails[0]"); got != "a@b.com" {
 		t.Fatalf("got %v", got)
 	}
