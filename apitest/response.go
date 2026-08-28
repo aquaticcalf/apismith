@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"aegion-dynamic/api-console/openapi"
-	"aegion-dynamic/api-console/request"
+	"aegion-dynamic/apismith/openapi"
+	"aegion-dynamic/apismith/request"
 )
 
 // Response wraps request.ExecuteOutput with go-test assertions.

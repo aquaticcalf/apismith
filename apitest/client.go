@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"aegion-dynamic/api-console/auth/cognito"
-	"aegion-dynamic/api-console/environments"
-	"aegion-dynamic/api-console/openapi"
-	"aegion-dynamic/api-console/request"
+	"aegion-dynamic/apismith/auth/cognito"
+	"aegion-dynamic/apismith/environments"
+	"aegion-dynamic/apismith/openapi"
+	"aegion-dynamic/apismith/request"
 )
 
 // Client is the e2e test client. It wraps OpenAPI validation, environment

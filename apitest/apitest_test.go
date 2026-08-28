@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"aegion-dynamic/api-console/request"
+	"aegion-dynamic/apismith/request"
 )
 
 func writeTempConfig(t *testing.T, baseURL string) string {

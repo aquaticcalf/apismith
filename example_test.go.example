@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"aegion-dynamic/api-console/apitest"
+	"aegion-dynamic/apismith/apitest"
 )
 
 // TestUserLifecycle shows e2e SDK: JWT/Cognito is handled behind the scenes,
